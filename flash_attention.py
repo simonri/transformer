@@ -36,7 +36,7 @@ def _sdpa_attention(q, k, v, window_size, enable_gqa):
 
   return F.scaled_dot_product_attention(q, k, v, attn_mask=mask, enable_gqa=enable_gqa)
 
-def flash_attn_func(q, k, v, casual=False, window_size=(-1, -1)):
+def flash_attn_func(q, k, v, causal=False, window_size=(-1, -1)):
   """
   fa for training (no kv cache)
   """
