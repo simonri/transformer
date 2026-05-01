@@ -1,0 +1,11 @@
+[project]
+name = "gpt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.4.4",
+    "nvidia-ml-py>=13.595.45",
+    "torch>=2.11.0",
+]
