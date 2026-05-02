@@ -10,3 +10,4 @@ wheels/
 .venv
 input.txt
 checkpoints/
+base_data_climbmix/

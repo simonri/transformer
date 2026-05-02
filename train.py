@@ -1,4 +1,5 @@
 from model import BigramLanguageModel, Config
+from dataloader import tokenizing_data_loader_with_state_bos_bestfit
 from tokenizer import Tokenizer
 import torch
 import os
@@ -16,52 +17,6 @@ vocab_size = tokenizer.get_vocab_size()
 print("Vocab size:", vocab_size)
 
 cfg.vocab_size = vocab_size
-
-
-with open("input.txt", "r", encoding="utf-8") as f:
-  text = f.read()
-
-chars = sorted(list(set(text)))
-
-# create encoding and decoding functions
-stoi = { ch:i for i,ch in enumerate(chars) }
-itos = { i:ch for i,ch in enumerate(chars) }
-def encode(s):
-  return [stoi[c] for c in s]
-
-def decode(indices):
-  return "".join([itos[i] for i in indices])
-
-# train and test splits
-data = torch.tensor(encode(text), dtype=torch.long)
-n = int(0.9*len(data))
-train_data = data[:n]
-val_data = data[n:]
-
-# data loading
-def get_batch(split):
-  data = train_data if split == "train" else val_data
-  ix = torch.randint(len(data) - cfg.sequence_len, (batch_size,))
-  x = torch.stack([data[i:i+cfg.sequence_len] for i in ix])
-  y = torch.stack([data[i+1:i+cfg.sequence_len+1] for i in ix])
-  x = x.to(device)
-  y = y.to(device)
-  return x, y
-
-@torch.no_grad()
-def estimate_loss():
-  out = {}
-  model.eval()
-  for split in ["train", "val"]:
-    losses = torch.zeros(eval_iters)
-    for k in range(eval_iters):
-      X, Y = get_batch(split)
-      loss = model(X, Y)
-      losses[k] = loss.item()
-    out[split] = losses.mean()
-  model.train()
-  return out
-
 
 # initialize the model
 model = BigramLanguageModel(cfg)
@@ -88,6 +43,9 @@ def save_checkpoint(checkpoint_dir, step, model_data, optimizer_data, meta_data,
     json.dump(meta_data, f, indent=2)
   print(f"Saved metadata to: {meta_path}")
 
+# init dataloaders
+train_loader = tokenizing_data_loader_with_state_bos_bestfit(tokenizer, batch_size, cfg.sequence_len, "train", device=device)
+x, y, dataloader_state_dict = next(train_loader)
 
 # training loop
 step = 0
@@ -95,10 +53,6 @@ save_every = 500
 
 while True:
   last_step = step == max_iters
-
-  if step % eval_interval == 0:
-    losses = estimate_loss()
-    print(f"step {step}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
   if last_step or (step > 0 and save_every > 0 and step % save_every == 0):
     save_checkpoint(
@@ -114,13 +68,17 @@ while True:
   if last_step:
     break
 
-  xb, yb = get_batch("train")
+  # single training step
+  torch.cuda.synchronize()
 
-  loss = model(xb, yb)
-  optimizer.zero_grad(set_to_none=True)
+  loss = model(x, y)
   loss.backward()
+  
+  x, y, dataloader_state_dict = next(train_loader)
+
   optimizer.step()
 
-  step += 1
+  model.zero_grad(set_to_none=True)
+  torch.cuda.synchronize()
 
-print(decode(list(model.generate([0], max_tokens=500))))
+  step += 1

@@ -6,6 +6,17 @@ BASE_URL = "https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle/resol
 MAX_SHARD = 6542
 DATA_DIR = os.path.join("base_data_climbmix")
 
+def list_parquet_files(data_dir=None):
+  """ Looks into a data dir and returns full paths to all parquet files. """
+  data_dir = DATA_DIR if data_dir is None else data_dir
+
+  parquet_files = sorted([
+    f for f in os.listdir(data_dir)
+    if f.endswith('.parquet') and not f.endswith('.tmp')
+  ])
+  parquet_paths = [os.path.join(data_dir, f) for f in parquet_files]
+  return parquet_paths
+
 def index_to_filename(index):
   return f"shard_{index:05d}.parquet"
 

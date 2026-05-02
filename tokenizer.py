@@ -16,8 +16,29 @@ class Tokenizer:
   def encode_special(self, text):
     return self.enc.encode_single_token(text)
 
-  def encode(self, text):
-    ids = self.enc.encode_ordinary(text)
+  def encode(self, text, prepend=None, append=None, num_threads=None):
+    if prepend is not None:
+      prepend_id = prepend if isinstance(prepend, int) else self.encode_special(prepend)
+    if append is not None:
+      append_id = append if isinstance(append, int) else self.encode_special(append)
+
+    if isinstance(text, str):
+      ids = self.enc.encode_ordinary(text)
+      if prepend is not None:
+        ids.insert(0, prepend_id)
+      if append is not None:
+        ids.append(append_id)
+    elif isinstance(text, list):
+      ids = self.enc.encode_ordinary_batch(text, num_threads=num_threads)
+      if prepend is not None:
+        for ids_row in ids:
+          ids_row.insert(0, prepend_id)
+      if append is not None:
+        for ids_row in ids:
+          ids_row.append(append_id)
+    else:
+      raise ValueError("text must be a string or list")
+    
     return ids
 
   def decode(self, ids):
@@ -25,3 +46,6 @@ class Tokenizer:
 
   def get_vocab_size(self):
     return self.enc.n_vocab
+
+  def get_bos_token_id(self):
+    return self.bos_token_id
