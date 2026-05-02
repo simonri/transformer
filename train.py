@@ -542,14 +542,31 @@ class BigramLanguageModel(nn.Module):
 
 cfg.vocab_size = vocab_size
 
-model = BigramLanguageModel(cfg).to(device)
+# initialize the model
+model = BigramLanguageModel(cfg)
+model.to_empty(device=device)
+model.init_weights()
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+orig_model = model
+model = torch.compile(model, dynamic=False)
 
-for iter in range(max_iters):
-  if iter % eval_interval == 0:
+param_counts = model.num_scaling_params()
+num_params = param_counts['total']
+print("num_params", num_params)
+
+optimizer = model.setup_optimizer()
+
+# training loop
+step = 0
+
+while True:
+  last_step = step == max_iters
+  if step % eval_interval == 0:
     losses = estimate_loss()
-    print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    print(f"step {step}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
+  if last_step:
+    break
 
   xb, yb = get_batch("train")
 
