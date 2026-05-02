@@ -1,9 +1,9 @@
-import tiktoken
+from tokenizer import Tokenizer
 
 
-tokenizer = tiktoken.get_encoding("o200k_harmony")
+tokenizer = Tokenizer.from_pretrained("o200k_harmony")
 
-vocab_size = tokenizer.max_token_value + 1
+vocab_size = tokenizer.enc.n_vocab
 print("Vocab size:", vocab_size)
 
 print(tokenizer.encode("hello there!"))
