@@ -53,5 +53,8 @@ class Tokenizer:
   def get_bos_token_id(self):
     return self.bos_token_id
 
+  def __call__(self, *args, **kwargs):
+    return self.encode(*args, **kwargs)
+
 def get_tokenizer():
   return Tokenizer.from_pretrained("o200k_harmony")

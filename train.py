@@ -2,21 +2,23 @@ import torch
 import os
 import json
 from dataclasses import asdict
-from tokenizer import Tokenizer
+from tokenizer import get_tokenizer
 
 from model import BigramLanguageModel, Config
 from dataloader import tokenizing_data_loader_with_state_bos_bestfit
+from engine import Engine
 
 # [arguments]
 # optimization
 device_batch_size = 32
-num_iterations = 3000
+num_iterations = 30000
 save_every = 500
+sample_every = 500
 max_seq_len = 32 # this is very low
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-tokenizer = Tokenizer.from_pretrained("o200k_harmony")
+tokenizer = get_tokenizer()
 vocab_size = tokenizer.get_vocab_size()
 print("Vocab size:", vocab_size)
 
@@ -65,6 +67,18 @@ step = 0
 
 while True:
   last_step = step == num_iterations
+
+  if sample_every > 0 and (last_step or (step > 0 and step % sample_every == 0)):
+    model.eval()
+    prompts = [
+      "The capital of Sweden is"
+    ]
+    engine = Engine(orig_model, tokenizer)
+    for prompt in prompts:
+      tokens = tokenizer(prompt)
+      sample, _ = engine.generate_batch(tokens, num_samples=1, max_tokens=16, temperature=0)
+      print(tokenizer.decode(sample[0]))
+    model.train()
 
   if last_step or (step > 0 and save_every > 0 and step % save_every == 0):
     save_checkpoint(

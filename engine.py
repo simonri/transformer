@@ -112,3 +112,21 @@ class Engine:
 
       ids = torch.tensor(token_column, dtype=torch.long, device=device).unsqueeze(1)
       logits = self.model.forward(ids, kv_cache=kv_cache_decode)[:, -1, :]
+
+  def generate_batch(self, tokens, num_samples=1, **kwargs):
+    bos = self.tokenizer.get_bos_token_id()
+    results = [tokens.copy() for _ in range(num_samples)]
+    masks = [[0] * len(tokens) for _ in range(num_samples)]
+    completed = [False] * num_samples
+    for token_column, token_masks in self.generate(tokens, num_samples, **kwargs):
+      for i, (token, mask) in enumerate(zip(token_column, token_masks)):
+        if not completed[i]:
+          if token == bos:
+            completed[i] = True
+          else:
+            results[i].append(token)
+            masks[i].append(mask)
+      # Stop if all rows are completed
+      if all(completed):
+        break
+    return results, masks

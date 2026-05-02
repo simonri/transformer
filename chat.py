@@ -53,7 +53,7 @@ def load_model(*args, **kwargs):
   return load_model_from_dir(checkpoints_dir, *args, **kwargs)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-step = 3000
+step = 10000
 
 model, tokenizer = load_model(device, phase="eval", step=step)
 

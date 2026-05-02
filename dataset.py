@@ -58,7 +58,7 @@ def download_single_file(index):
 
 if __name__ == "__main__":
   num_workers = 4
-  num_files = 4
+  num_files = 20
 
   os.makedirs(DATA_DIR, exist_ok=True)
 
