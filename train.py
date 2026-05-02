@@ -5,21 +5,30 @@ import torch
 import os
 import json
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-batch_size = 64
-eval_iters = 200
-max_iters = 5000
-eval_interval = 500
+# [arguments]
+# optimization
+device_batch_size = 32
+num_iterations = 3000
+save_every = 500
+max_seq_len = 32 # this is very low
 
-cfg = Config()
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 tokenizer = Tokenizer.from_pretrained("o200k_harmony")
 vocab_size = tokenizer.get_vocab_size()
 print("Vocab size:", vocab_size)
 
-cfg.vocab_size = vocab_size
-
 # initialize the model
-model = BigramLanguageModel(cfg)
+def build_model_meta():
+  config = Config(
+    sequence_len=max_seq_len,
+    vocab_size=vocab_size,
+  )
+
+  model_meta = BigramLanguageModel(config)
+  return model_meta
+
+model = build_model_meta()
 model.to_empty(device=device)
 model.init_weights()
 
@@ -44,15 +53,14 @@ def save_checkpoint(checkpoint_dir, step, model_data, optimizer_data, meta_data,
   print(f"Saved metadata to: {meta_path}")
 
 # init dataloaders
-train_loader = tokenizing_data_loader_with_state_bos_bestfit(tokenizer, batch_size, cfg.sequence_len, "train", device=device)
+train_loader = tokenizing_data_loader_with_state_bos_bestfit(tokenizer, device_batch_size, max_seq_len, "train", device=device)
 x, y, dataloader_state_dict = next(train_loader)
 
 # training loop
 step = 0
-save_every = 500
 
 while True:
-  last_step = step == max_iters
+  last_step = step == num_iterations
 
   if last_step or (step > 0 and save_every > 0 and step % save_every == 0):
     save_checkpoint(
