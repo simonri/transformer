@@ -1,9 +1,11 @@
-from model import BigramLanguageModel, Config
-from dataloader import tokenizing_data_loader_with_state_bos_bestfit
-from tokenizer import Tokenizer
 import torch
 import os
 import json
+from dataclasses import asdict
+from tokenizer import Tokenizer
+
+from model import BigramLanguageModel, Config
+from dataloader import tokenizing_data_loader_with_state_bos_bestfit
 
 # [arguments]
 # optimization
@@ -29,6 +31,8 @@ def build_model_meta():
   return model_meta
 
 model = build_model_meta()
+model_config = model.config
+model_config_kwargs = asdict(model_config)
 model.to_empty(device=device)
 model.init_weights()
 
@@ -70,6 +74,7 @@ while True:
       optimizer.state_dict(),
       {
         "step": step,
+        "model_config": model_config_kwargs
       }
     )
 
