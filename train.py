@@ -1,5 +1,6 @@
-import torch
 import os
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+import torch
 import json
 from dataclasses import asdict
 from tokenizer import get_tokenizer
@@ -17,18 +18,18 @@ head_dim = 64
 window_pattern = "SSSL"
 
 # optimization
-device_batch_size = 8
-save_every = 500
+device_batch_size = 1
+save_every = 2000
 sample_every = 500
-max_seq_len = 32 # this is very low
+max_seq_len = 512 # this is very low
 warmup_steps = 40
 warmdown_ratio = 0.65
 final_lr_frac = 0.05
 weight_decay = 0.28
-total_batch_size = -1
+total_batch_size = 512
 
 # training horizon
-target_param_data_ratio = 12
+target_param_data_ratio = 8
 num_iterations = 30000
 # [arguments end]
 
@@ -80,6 +81,12 @@ d12_ref = build_model_meta(12)
 D_REF = target_param_data_ratio * get_scaling_params(d12_ref)
 B_REF = 2**19 # optim batch size at d12 = 524,288 tokens
 
+if total_batch_size == -1:
+  batch_size_ratio = target_tokens / D_REF
+  predicted_batch_size = B_REF * batch_size_ratio ** 0.383
+  total_batch_size = 2 ** round(math.log2(predicted_batch_size))
+  print(f"Auto-computed optimal batch size: {total_batch_size} tokens")
+
 weight_decay_scaled = weight_decay * math.sqrt(total_batch_size / B_REF) * (D_REF / target_tokens)
 
 optimizer = model.setup_optimizer()
@@ -130,6 +137,7 @@ def get_weight_decay(it):
 
 # training loop
 step = 0
+smooth_train_loss = 0
 
 while True:
   last_step = step == num_iterations
@@ -165,6 +173,7 @@ while True:
   torch.cuda.synchronize()
 
   loss = model(x, y)
+  train_loss = loss.detach()
   loss.backward()
   
   x, y, dataloader_state_dict = next(train_loader)
@@ -183,6 +192,15 @@ while True:
   optimizer.step()
 
   model.zero_grad(set_to_none=True)
+  train_loss_f = train_loss.item()
   torch.cuda.synchronize()
+
+  # logging
+  ema_beta = 0.9
+  smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * train_loss_f
+  debiased_smooth_loss = smooth_train_loss / (1 - ema_beta ** (step + 1))
+
+  if step % 100 == 0:
+    print(f"step {step:05d}/{num_iterations:05d} | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f}")
 
   step += 1
