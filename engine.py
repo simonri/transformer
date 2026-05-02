@@ -1,6 +1,31 @@
 import torch
+from collections import deque
+from torch.nn import functional as F
 
 from kv_cache import KVCache
+
+@torch.inference_mode()
+def sample_next_token(logits, rng, temperature=1.0, top_k=None):
+  assert temperature >= 0
+  if temperature == 0.0:
+    return torch.argmax(logits, dim=-1, keepdim=True)
+  if top_k is not None and top_k > 0:
+    k = min(top_k, logits.size(-1))
+    vals, idx = torch.topk(logits, k, dim=-1)
+    vals = vals / temperature
+    probs = F.softmax(vals, dim=-1)
+    choice = torch.multinomial(probs, num_samples=1, generator=rng)
+    return idx.gather(1, choice)
+  else:
+    logits = logits / temperature
+    probs = F.softmax(logits, dim=-1)
+    return torch.multinomial(probs, num_samples=1, generator=rng)
+
+class RowState:
+  def __init__(self, current_tokens=None):
+    self.current_tokens = current_tokens or []
+    self.forced_tokens = deque()
+    self.completed = False
 
 class Engine:
   def __init__(self, model, tokenizer):
@@ -15,6 +40,8 @@ class Engine:
     # set seed
     rng = torch.Generator(device=device)
     rng.manual_seed(seed)
+
+    bos = self.tokenizer.get_bos_token_id()
 
     # 1) run a batch 1 prefill of prompt tokens
     m = self.model.config
@@ -46,22 +73,34 @@ class Engine:
     kv_cache_decode.prefill(kv_cache_prefill)
     del kv_cache_prefill
 
-    num_generated = 0
+    # 3) init states for samples
+    row_states = [RowState(tokens.copy()) for _ in range(num_samples)]
 
+    # 4) gen loop
+    num_generated = 0
     while True:
       if max_tokens is not None and num_generated >= max_tokens:
         break
 
-      next_ids = torch.argmax(logits, dim=-1, keepdim=True)
+      if all(state.completed for state in row_states):
+        break
+
+      next_ids = sample_next_token(logits, rng, temperature, top_k)
       sampled_tokens = next_ids[:, 0].tolist()
 
       token_column = []
       token_masks = []
 
-      for i in range(num_samples):
-        token_masks.append(1)
-        next_token = sampled_tokens[i]
+      for i, state in enumerate(row_states):
+        is_forced = len(state.forced_tokens) > 0
+        token_masks.append(0 if is_forced else 1)
+        next_token = state.forced_tokens.popleft() if is_forced else sampled_tokens[i]
         token_column.append(next_token)
+
+        state.current_tokens.append(next_token)
+
+        if next_token == bos:
+          state.completed = True
 
       yield token_column, token_masks
       num_generated += 1

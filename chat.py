@@ -104,5 +104,3 @@ while True:
     token_text = tokenizer.decode([token])
     print(token_text, end="", flush=True)
   print()
-
-  print(conversation_tokens)
