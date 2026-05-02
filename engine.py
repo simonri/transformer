@@ -33,7 +33,7 @@ class Engine:
     self.tokenizer = tokenizer
 
   @torch.inference_mode()
-  def generate(self, tokens, num_samples=1, max_tokens=None, temperature=1.0, top_k=None, seed=42):
+  def generate(self, tokens, num_samples=1, max_tokens=None, temperature=1.0, top_k=None, seed=42, stop_tokens=None):
     device = self.model.get_device()
     dtype = torch.float32
 
@@ -41,7 +41,7 @@ class Engine:
     rng = torch.Generator(device=device)
     rng.manual_seed(seed)
 
-    bos = self.tokenizer.get_bos_token_id()
+    stop_tokens = set(stop_tokens or [])
 
     # 1) run a batch 1 prefill of prompt tokens
     m = self.model.config
@@ -93,17 +93,22 @@ class Engine:
 
       for i, state in enumerate(row_states):
         is_forced = len(state.forced_tokens) > 0
-        token_masks.append(0 if is_forced else 1)
         next_token = state.forced_tokens.popleft() if is_forced else sampled_tokens[i]
+        is_stop = next_token in stop_tokens
+
+        token_masks.append(0 if is_forced or is_stop else 1)
         token_column.append(next_token)
 
-        state.current_tokens.append(next_token)
-
-        if next_token == bos:
+        if is_stop:
           state.completed = True
+        else:
+          state.current_tokens.append(next_token)
 
       yield token_column, token_masks
       num_generated += 1
+
+      if all(state.completed for state in row_states):
+        break
 
       ids = torch.tensor(token_column, dtype=torch.long, device=device).unsqueeze(1)
       logits = self.model.forward(ids, kv_cache=kv_cache_decode)[:, -1, :]

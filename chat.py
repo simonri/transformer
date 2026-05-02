@@ -57,16 +57,11 @@ step = 3000
 
 model, tokenizer = load_model(device, phase="eval", step=step)
 
-bos = tokenizer.get_bos_token_id()
-
-start_token, end_token = tokenizer.encode_special("<|start|>"), tokenizer.encode_special("<|end|>")
-message_token = tokenizer.encode_special("<|message|>")
-user_role_token = tokenizer.encode_special("user")
-assistant_role_token = tokenizer.encode_special("assistant")
+bos = tokenizer.get_bos_token_id() # <|endoftext|>
 
 engine = Engine(model, tokenizer)
 
-conversation_tokens = [bos]
+conversation_text = ""
 
 while True:
   try:
@@ -78,29 +73,29 @@ while True:
   if not user_input:
     continue
 
-  # example input
-  # <|start|>user<|message|>What is 2 + 2?<|end|>
-  # <|start|>assistant
-
-  conversation_tokens.append(start_token)
-  conversation_tokens.append(user_role_token)
-  conversation_tokens.append(message_token)
-  conversation_tokens.extend(tokenizer.encode(user_input))
-  conversation_tokens.append(end_token)
-  conversation_tokens.append(start_token)
-  conversation_tokens.append(assistant_role_token)
+  prompt_text = f"{conversation_text}User: {user_input}\nAssistant:"
+  prompt_tokens = [bos]
+  prompt_tokens.extend(tokenizer.encode(prompt_text))
 
   generate_kwargs = {
     "num_samples": 1,
     "max_tokens": 256,
-    "temperature": 0.7,
-    "top_k": 40
+    "temperature": 0.6,
+    "top_k": 50,
+    "stop_tokens": [bos],
   }
   response_tokens = []
   print("\nAssistant: ", end="", flush=True)
-  for token_column, token_masks in engine.generate(conversation_tokens, **generate_kwargs):
+  for token_column, token_masks in engine.generate(prompt_tokens, **generate_kwargs):
+    if token_masks[0] == 0:
+      continue
+
     token = token_column[0]
     response_tokens.append(token)
     token_text = tokenizer.decode([token])
     print(token_text, end="", flush=True)
+
   print()
+
+  response_text = tokenizer.decode(response_tokens)
+  conversation_text = f"{prompt_text}{response_text}\n\n"

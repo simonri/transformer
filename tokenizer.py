@@ -44,6 +44,9 @@ class Tokenizer:
   def decode(self, ids):
     return self.enc.decode(ids)
 
+  def get_special_tokens(self):
+    return self.enc.special_tokens_set
+
   def get_vocab_size(self):
     return self.enc.n_vocab
 
