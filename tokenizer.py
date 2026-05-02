@@ -22,3 +22,6 @@ class Tokenizer:
 
   def decode(self, ids):
     return self.enc.decode(ids)
+
+  def get_vocab_size(self):
+    return self.enc.n_vocab

@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from types import SimpleNamespace
 
 def _sdpa_attention(q, k, v, window_size, enable_gqa):
   """
@@ -76,7 +77,6 @@ def flash_attn_with_kvcache(q, k_cache, v_cache, k=None, v=None, cache_seqlens=N
 
   return y_sdpa.transpose(1, 2)
 
-from types import SimpleNamespace
 flash_attn = SimpleNamespace(
   flash_attn_func=flash_attn_func,
   flash_attn_with_kvcache=flash_attn_with_kvcache,
