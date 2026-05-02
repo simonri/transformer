@@ -35,8 +35,8 @@ class KVCache:
     assert self.n_layers == other.n_layers and self.n_heads == other.n_heads and self.head_dim == other.head_dim
     assert self.max_seq_len >= other.max_seq_len
     other_pos = other.get_pos()
-    self.k_cache[:, :other_pos, :, :] = other.k_cache[:, :other_pos, :, :]
-    self.v_cache[:, :other_pos, :, :] = other.v_cache[:, :other_pos, :, :]
+    self.k_cache[:, :, :other_pos, :, :] = other.k_cache[:, :, :other_pos, :, :]
+    self.v_cache[:, :, :other_pos, :, :] = other.v_cache[:, :, :other_pos, :, :]
     self.cache_seqlens.fill_(other_pos)
 
     if other.prev_embedding is not None:
