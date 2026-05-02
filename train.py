@@ -3,18 +3,34 @@ import os
 import json
 from dataclasses import asdict
 from tokenizer import get_tokenizer
+import math
 
 from model import BigramLanguageModel, Config
 from dataloader import tokenizing_data_loader_with_state_bos_bestfit
 from engine import Engine
 
 # [arguments]
+# model arch
+depth = 6
+aspect_ratio = 32
+head_dim = 64
+window_pattern = "SSSL"
+
 # optimization
-device_batch_size = 32
-num_iterations = 30000
+device_batch_size = 8
 save_every = 500
 sample_every = 500
 max_seq_len = 32 # this is very low
+warmup_steps = 40
+warmdown_ratio = 0.65
+final_lr_frac = 0.05
+weight_decay = 0.28
+total_batch_size = -1
+
+# training horizon
+target_param_data_ratio = 12
+num_iterations = 30000
+# [arguments end]
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -23,16 +39,24 @@ vocab_size = tokenizer.get_vocab_size()
 print("Vocab size:", vocab_size)
 
 # initialize the model
-def build_model_meta():
+def build_model_meta(depth):
+  base_dim = depth * aspect_ratio
+  model_dim = ((base_dim + head_dim - 1) // head_dim) * head_dim
+  num_heads = model_dim // head_dim
   config = Config(
     sequence_len=max_seq_len,
     vocab_size=vocab_size,
+    n_layer=depth,
+    n_head=num_heads,
+    n_kv_head=num_heads,
+    n_embd=model_dim,
+    window_pattern=window_pattern,
   )
 
   model_meta = BigramLanguageModel(config)
   return model_meta
 
-model = build_model_meta()
+model = build_model_meta(depth)
 model_config = model.config
 model_config_kwargs = asdict(model_config)
 model.to_empty(device=device)
@@ -42,8 +66,21 @@ orig_model = model
 model = torch.compile(model, dynamic=False)
 
 param_counts = model.num_scaling_params()
-num_params = param_counts['total']
+num_params = param_counts["total"]
 print("num_params", num_params)
+
+def get_scaling_params(m):
+  params_counts = m.num_scaling_params()
+  scaling_params = params_counts["transformer_matrices"] + params_counts["lm_head"]
+  return scaling_params
+num_scaling_params = get_scaling_params(model)
+target_tokens = int(target_param_data_ratio * num_scaling_params)
+
+d12_ref = build_model_meta(12)
+D_REF = target_param_data_ratio * get_scaling_params(d12_ref)
+B_REF = 2**19 # optim batch size at d12 = 524,288 tokens
+
+weight_decay_scaled = weight_decay * math.sqrt(total_batch_size / B_REF) * (D_REF / target_tokens)
 
 optimizer = model.setup_optimizer()
 
@@ -61,6 +98,35 @@ def save_checkpoint(checkpoint_dir, step, model_data, optimizer_data, meta_data,
 # init dataloaders
 train_loader = tokenizing_data_loader_with_state_bos_bestfit(tokenizer, device_batch_size, max_seq_len, "train", device=device)
 x, y, dataloader_state_dict = next(train_loader)
+
+# lr schedule (linear warmup, constant, linear warmdown)
+def get_lr_multiplier(it):
+  warmup_iters = warmup_steps
+  warmdown_iters = round(warmdown_ratio * num_iterations)
+  if it < warmup_iters:
+    return (it + 1) / warmup_iters
+  elif it <= num_iterations - warmdown_iters:
+    return 1.0
+  else:
+    progress = (num_iterations - it) / warmdown_iters
+    return progress * 1.0 + (1 - progress) * final_lr_frac
+
+# momentum scheduler for muon optimizer (warms up to 0.97, warms down to 0.9 during lr warmdown)
+def get_muon_momentum(it):
+  warmdown_iters = round(warmdown_ratio * num_iterations)
+  warmdown_start = num_iterations - warmdown_iters
+  if it < 400:
+    frac = it / 400
+    return (1 - frac) * 0.85 + frac * 0.97
+  elif it >= warmdown_start:
+    progress = (it - warmdown_start) / warmdown_iters
+    return 0.97 * (1 - progress) + 0.90 * progress
+  else:
+    return 0.97
+
+# weight decay scheduler for muon optimizer (cos decay to zero over the course of trainiing)
+def get_weight_decay(it):
+  return weight_decay_scaled * 0.5 * (1 + math.cos(math.pi * it / num_iterations))
 
 # training loop
 step = 0
@@ -102,6 +168,17 @@ while True:
   loss.backward()
   
   x, y, dataloader_state_dict = next(train_loader)
+
+  # step the optimizer
+  lrm = get_lr_multiplier(step)
+  muon_momentum = get_muon_momentum(step)
+  muon_weight_decay = get_weight_decay(step)
+
+  for group in optimizer.param_groups:
+    group["lr"] = group["initial_lr"] * lrm
+    if group["kind"] == "muon":
+      group["momentum"] = muon_momentum
+      group["weight_decay"] = muon_weight_decay
 
   optimizer.step()
 
