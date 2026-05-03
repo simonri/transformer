@@ -14,14 +14,14 @@ from engine import Engine
 # model arch
 depth = 6
 aspect_ratio = 32
-head_dim = 64
+head_dim = 32
+max_seq_len = 512 # this is very low
 window_pattern = "SSSL"
 
 # optimization
-device_batch_size = 1
+device_batch_size = 16
 save_every = 2000
 sample_every = 500
-max_seq_len = 512 # this is very low
 warmup_steps = 40
 warmdown_ratio = 0.65
 final_lr_frac = 0.05

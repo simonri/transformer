@@ -2,6 +2,28 @@ import torch
 import torch.nn.functional as F
 from types import SimpleNamespace
 
+def _load_flash_attention_3():
+  """Try to load Flash Attention 3 (requires Hopper GPU, sm90)."""
+  if not torch.cuda.is_available():
+    return None
+  try:
+    major, _ = torch.cuda.get_device_capability()
+    # FA3 kernels are compiled for Hopper (sm90) only
+    # Ada (sm89), Blackwell (sm100) need SDPA fallback until FA3 is recompiled
+    if major != 9:
+        return None
+    import os
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+    from kernels import get_kernel
+    return get_kernel('varunneal/flash-attention-3').flash_attn_interface
+  except Exception:
+    return None
+
+_fa3 = _load_flash_attention_3()
+HAS_FA3 = _fa3 is not None
+
+print("HAS_FA3", HAS_FA3)
+
 def _sdpa_attention(q, k, v, window_size, enable_gqa):
   """
   SDPA attention with sliding window support.
@@ -37,10 +59,15 @@ def _sdpa_attention(q, k, v, window_size, enable_gqa):
 
   return F.scaled_dot_product_attention(q, k, v, attn_mask=mask, enable_gqa=enable_gqa)
 
+USE_FA3 = True
+
 def flash_attn_func(q, k, v, causal=False, window_size=(-1, -1)):
   """
   fa for training (no kv cache)
   """
+  if USE_FA3:
+    return _fa3.flash_attn_func(q, k, v, causal=causal, window_size=window_size)
+
   # sdpa
   q = q.transpose(1, 2)
   k = k.transpose(1, 2)
@@ -53,6 +80,12 @@ def flash_attn_with_kvcache(q, k_cache, v_cache, k=None, v=None, cache_seqlens=N
   """
   fa for inference (with kv cache)
   """
+  if USE_FA3:
+    return _fa3.flash_attn_with_kvcache(
+      q, k_cache, v_cache, k=k, v=v, cache_seqlens=cache_seqlens,
+      causal=causal, window_size=window_size
+    )
+
   # sdpa
   B, T_new, H, D = q.shape
   pos = cache_seqlens[0].item()

@@ -1,8 +1,7 @@
 import torch
-
 from torch import Tensor
 
-COMPUTE_DTYPE = torch.float32
+from common import COMPUTE_DTYPE
 
 @torch.compile(dynamic=False, fullgraph=True)
 def adamw_step_fused(

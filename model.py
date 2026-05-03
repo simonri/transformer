@@ -6,10 +6,9 @@ from torch.nn import functional as F
 
 from flash_attention import flash_attn
 from moun import MuonAdamW
+from common import COMPUTE_DTYPE
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-COMPUTE_DTYPE = torch.float32
 
 
 @dataclass

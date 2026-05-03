@@ -3,6 +3,7 @@ from collections import deque
 from torch.nn import functional as F
 
 from kv_cache import KVCache
+from common import COMPUTE_DTYPE
 
 @torch.inference_mode()
 def sample_next_token(logits, rng, temperature=1.0, top_k=None):
@@ -35,7 +36,7 @@ class Engine:
   @torch.inference_mode()
   def generate(self, tokens, num_samples=1, max_tokens=None, temperature=1.0, top_k=None, seed=42, stop_tokens=None):
     device = self.model.get_device()
-    dtype = torch.float32
+    dtype = COMPUTE_DTYPE
 
     # set seed
     rng = torch.Generator(device=device)
