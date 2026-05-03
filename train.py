@@ -12,25 +12,26 @@ from engine import Engine
 
 # [arguments]
 # model arch
-depth = 6
-aspect_ratio = 32
-head_dim = 32
-max_seq_len = 512 # this is very low
+depth = 6 # depth of transformer model
+head_dim = 32 # target head dimension for attention (fa3 requires head_dim divisible by 8)
+max_seq_len = 512 # max context length
 window_pattern = "SSSL"
+num_q_heads = 12
+num_kv_heads = 2
 
 # optimization
-device_batch_size = 16
 save_every = 2000
 sample_every = 500
 warmup_steps = 40
 warmdown_ratio = 0.65
 final_lr_frac = 0.05
 weight_decay = 0.28
-total_batch_size = 512
+device_batch_size = 16 # per device batch size
+total_batch_size = 512 # total batch size in tokens
 
 # training horizon
-target_param_data_ratio = 8
-num_iterations = 30000
+target_param_data_ratio = 8 # calculate num_iterations to maintain data:param ratio
+num_iterations = 30000 # num optimization steps
 # [arguments end]
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -41,15 +42,14 @@ print("Vocab size:", vocab_size)
 
 # initialize the model
 def build_model_meta(depth):
-  base_dim = depth * aspect_ratio
-  model_dim = ((base_dim + head_dim - 1) // head_dim) * head_dim
-  num_heads = model_dim // head_dim
+  model_dim = num_q_heads * head_dim
+
   config = Config(
     sequence_len=max_seq_len,
     vocab_size=vocab_size,
     n_layer=depth,
-    n_head=num_heads,
-    n_kv_head=num_heads,
+    n_head=num_q_heads,
+    n_kv_head=num_kv_heads,
     n_embd=model_dim,
     window_pattern=window_pattern,
   )

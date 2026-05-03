@@ -48,7 +48,7 @@ class Engine:
     m = self.model.config
     kv_model_kwargs = {
       "num_heads": m.n_kv_head,
-      "head_dim": m.n_embd // m.n_kv_head,
+      "head_dim": m.n_embd // m.n_head,
       "num_layers": m.n_layer,
     }
     kv_cache_prefill = KVCache(
