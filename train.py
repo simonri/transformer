@@ -5,14 +5,21 @@ import json
 from dataclasses import asdict
 from tokenizer import get_tokenizer
 import math
+import wandb
+import argparse
 
 from model import BigramLanguageModel, Config
 from dataloader import tokenizing_data_loader_with_state_bos_bestfit
 from engine import Engine
+from flash_attention import USE_FA3
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--run_name", type=str, help="name of the run")
+args = parser.parse_args()
 
 # [arguments]
 # model arch
-depth = 6 # depth of transformer model
+depth = 16 # depth of transformer model
 head_dim = 32 # target head dimension for attention (fa3 requires head_dim divisible by 8)
 max_seq_len = 512 # max context length
 window_pattern = "SSSL"
@@ -27,7 +34,7 @@ warmdown_ratio = 0.65
 final_lr_frac = 0.05
 weight_decay = 0.28
 device_batch_size = 16 # per device batch size
-total_batch_size = 512 # total batch size in tokens
+total_batch_size = -1 # total batch size in tokens
 
 # training horizon
 target_param_data_ratio = 8 # calculate num_iterations to maintain data:param ratio
@@ -35,6 +42,16 @@ num_iterations = 30000 # num optimization steps
 # [arguments end]
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# wandb logging
+wandb_run = wandb.init(project="gpt", name=args.run_name)
+
+# flash attention status
+using_fa3 = USE_FA3
+if using_fa3:
+  print("Using Flash Attention 3")
+else:
+  print("Using PyTorch SDPA")
 
 tokenizer = get_tokenizer()
 vocab_size = tokenizer.get_vocab_size()
@@ -60,6 +77,7 @@ def build_model_meta(depth):
 model = build_model_meta(depth)
 model_config = model.config
 model_config_kwargs = asdict(model_config)
+print(f"Model config:\n{json.dumps(model_config_kwargs, indent=2)}")
 model.to_empty(device=device)
 model.init_weights()
 
@@ -202,5 +220,11 @@ while True:
 
   if step % 100 == 0:
     print(f"step {step:05d}/{num_iterations:05d} | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f}")
+    log_data = {
+      "step": step,
+      "train/loss": debiased_smooth_loss,
+      "train/lrm": lrm,
+    }
+    wandb_run.log(log_data)
 
   step += 1

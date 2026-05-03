@@ -11,3 +11,4 @@ wheels/
 input.txt
 checkpoints/
 base_data_climbmix/
+wandb
