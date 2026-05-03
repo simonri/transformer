@@ -153,6 +153,10 @@ def get_muon_momentum(it):
 def get_weight_decay(it):
   return weight_decay_scaled * 0.5 * (1 + math.cos(math.pi * it / num_iterations))
 
+tokens_per_fwdbwd = device_batch_size * max_seq_len
+world_tokens_per_fwdbwd = tokens_per_fwdbwd * 1
+grad_accum_steps = total_batch_size // world_tokens_per_fwdbwd
+
 # training loop
 step = 0
 smooth_train_loss = 0
@@ -190,11 +194,12 @@ while True:
   # single training step
   torch.cuda.synchronize()
 
-  loss = model(x, y)
-  train_loss = loss.detach()
-  loss.backward()
+  for micro_step in range(grad_accum_steps):
+    loss = model(x, y)
+    train_loss = loss.detach()
+    loss.backward()
   
-  x, y, dataloader_state_dict = next(train_loader)
+    x, y, dataloader_state_dict = next(train_loader)
 
   # step the optimizer
   lrm = get_lr_multiplier(step)
